@@ -17,7 +17,7 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
 BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
 
 VERSION="1.0.0"
-BUILD="2026-03-12.7"
+BUILD="2026-03-12.8"
 
 print_banner() {
     echo ""
@@ -213,10 +213,23 @@ update() {
         return
     fi
 
-    download_bin "server-${PLATFORM}" "${BASE_URL}/server-${PLATFORM}" "${INSTALL_DIR}/${SERVER_BIN}"
+    local tmp_bin="${INSTALL_DIR}/${SERVER_BIN}.new"
+    download_bin "server-${PLATFORM}" "${BASE_URL}/server-${PLATFORM}" "$tmp_bin"
+
+    local was_running=false
     if [ "$DETECTED_OS" = "linux" ] && systemctl is-active ip-hijack-server &>/dev/null; then
-        systemctl restart ip-hijack-server
-        info "Restarted ip-hijack-server"
+        was_running=true
+        step "Stopping server..."
+        systemctl stop ip-hijack-server
+    fi
+
+    mv -f "$tmp_bin" "${INSTALL_DIR}/${SERVER_BIN}"
+    chmod +x "${INSTALL_DIR}/${SERVER_BIN}"
+    info "Binary replaced"
+
+    if [ "$was_running" = true ]; then
+        systemctl start ip-hijack-server
+        info "Server restarted"
     fi
 }
 
