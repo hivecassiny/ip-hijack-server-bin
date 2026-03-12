@@ -17,7 +17,7 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
 BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
 
 VERSION="1.0.0"
-BUILD="2026-03-12.6"
+BUILD="2026-03-12.7"
 
 print_banner() {
     echo ""
@@ -94,13 +94,17 @@ install_server() {
     mkdir -p "$DATA_DIR"
 
     echo ""
-    prompt "TCP listen address (for Agent connections) [:9000]: "
-    read -r TCP_ADDR < /dev/tty
-    TCP_ADDR="${TCP_ADDR:-:9000}"
+    prompt "TCP port (for Agent connections) [9000]: "
+    read -r TCP_PORT < /dev/tty
+    TCP_PORT="${TCP_PORT:-9000}"
+    TCP_PORT="${TCP_PORT#:}"
+    TCP_ADDR=":${TCP_PORT}"
 
-    prompt "HTTP listen address (for Web UI) [:8080]: "
-    read -r HTTP_ADDR < /dev/tty
-    HTTP_ADDR="${HTTP_ADDR:-:8080}"
+    prompt "HTTP port (for Web UI) [8080]: "
+    read -r HTTP_PORT < /dev/tty
+    HTTP_PORT="${HTTP_PORT:-8080}"
+    HTTP_PORT="${HTTP_PORT#:}"
+    HTTP_ADDR=":${HTTP_PORT}"
 
     prompt "Admin password [admin]: "
     read -r ADMIN_PASS < /dev/tty
