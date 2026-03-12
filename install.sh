@@ -91,23 +91,23 @@ install_server() {
 
     echo ""
     prompt "TCP listen address (for Agent connections) [:9000]: "
-    read -r TCP_ADDR
+    read -r TCP_ADDR < /dev/tty
     TCP_ADDR="${TCP_ADDR:-:9000}"
 
     prompt "HTTP listen address (for Web UI) [:8080]: "
-    read -r HTTP_ADDR
+    read -r HTTP_ADDR < /dev/tty
     HTTP_ADDR="${HTTP_ADDR:-:8080}"
 
     prompt "Admin password [admin]: "
-    read -r ADMIN_PASS
+    read -r ADMIN_PASS < /dev/tty
     ADMIN_PASS="${ADMIN_PASS:-admin}"
 
     prompt "Database path [${DATA_DIR}/hijack.db]: "
-    read -r DB_PATH
+    read -r DB_PATH < /dev/tty
     DB_PATH="${DB_PATH:-${DATA_DIR}/hijack.db}"
 
     prompt "Enable compression? [Y/n]: "
-    read -r COMP
+    read -r COMP < /dev/tty
     COMP="${COMP:-Y}"
     local compress_flag="-compress=true"
     if [[ "$COMP" =~ ^[nN] ]]; then
@@ -178,7 +178,7 @@ uninstall() {
 
     echo ""
     prompt "Also remove data (database, UUID) in ${DATA_DIR}? [y/N]: "
-    read -r RM_DATA
+    read -r RM_DATA < /dev/tty
     if [[ "$RM_DATA" =~ ^[yY] ]]; then
         rm -rf "$DATA_DIR"
         info "Removed ${DATA_DIR}"
@@ -253,7 +253,7 @@ main_menu() {
     echo -e "    ${CYAN}0)${RESET}  Exit"
     echo ""
     prompt "Enter choice [1-4, 0]: "
-    read -r choice
+    read -r choice < /dev/tty
 
     case "$choice" in
         1) check_root; install_server ;;
