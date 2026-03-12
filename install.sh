@@ -1,0 +1,278 @@
+#!/bin/bash
+#
+# IP Hijack Server — Interactive Installer
+# https://github.com/hivecassiny/ip-hijack-server-bin
+#
+set -e
+
+REPO="hivecassiny/ip-hijack-server-bin"
+BASE_URL="https://raw.githubusercontent.com/${REPO}/main/bin"
+INSTALL_DIR="/usr/local/bin"
+SERVICE_DIR="/etc/systemd/system"
+SERVER_BIN="ip-hijack-server"
+DATA_DIR="/var/lib/ip-hijack"
+
+# ─── Colors ───────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
+BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
+
+print_banner() {
+    echo ""
+    echo -e "${CYAN}${BOLD}"
+    echo "  ╔══════════════════════════════════════════╗"
+    echo "  ║       IP Hijack Server Installer         ║"
+    echo "  ║                  v1.0.0                   ║"
+    echo "  ╚══════════════════════════════════════════╝"
+    echo -e "${RESET}"
+}
+
+info()    { echo -e "  ${GREEN}[✓]${RESET} $1"; }
+warn()    { echo -e "  ${YELLOW}[!]${RESET} $1"; }
+error()   { echo -e "  ${RED}[✗]${RESET} $1"; }
+step()    { echo -e "\n  ${CYAN}${BOLD}▸ $1${RESET}"; }
+prompt()  { echo -en "  ${BOLD}$1${RESET}"; }
+
+# ─── Detect Architecture ─────────────────────────────────────────
+detect_arch() {
+    local os arch
+    os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    arch=$(uname -m)
+
+    case "$arch" in
+        x86_64|amd64)   arch="amd64" ;;
+        aarch64|arm64)   arch="arm64" ;;
+        armv7l|armhf)    arch="arm"   ;;
+        *)               error "Unsupported architecture: $arch (Server supports amd64/arm64/arm only)"; exit 1 ;;
+    esac
+
+    case "$os" in
+        linux)  ;;
+        darwin) ;;
+        *)      error "Unsupported OS: $os"; exit 1 ;;
+    esac
+
+    DETECTED_OS="$os"
+    DETECTED_ARCH="$arch"
+    PLATFORM="${os}-${arch}"
+}
+
+# ─── Check Root ───────────────────────────────────────────────────
+check_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        error "This script must be run as root (use sudo)"
+        exit 1
+    fi
+}
+
+# ─── Download Binary ─────────────────────────────────────────────
+download_bin() {
+    local name="$1" url="$2" dest="$3"
+    step "Downloading ${name}..."
+    if command -v wget &>/dev/null; then
+        wget -q --show-progress -O "$dest" "$url" || { error "Download failed"; exit 1; }
+    elif command -v curl &>/dev/null; then
+        curl -fL --progress-bar -o "$dest" "$url" || { error "Download failed"; exit 1; }
+    else
+        error "Neither curl nor wget found. Please install one."
+        exit 1
+    fi
+    chmod +x "$dest"
+    info "Installed to ${dest}"
+}
+
+# ─── Install Server ──────────────────────────────────────────────
+install_server() {
+    step "Installing Server (${PLATFORM})"
+
+    local url="${BASE_URL}/server-${PLATFORM}"
+    download_bin "server-${PLATFORM}" "$url" "${INSTALL_DIR}/${SERVER_BIN}"
+
+    mkdir -p "$DATA_DIR"
+
+    echo ""
+    prompt "TCP listen address (for Agent connections) [:9000]: "
+    read -r TCP_ADDR
+    TCP_ADDR="${TCP_ADDR:-:9000}"
+
+    prompt "HTTP listen address (for Web UI) [:8080]: "
+    read -r HTTP_ADDR
+    HTTP_ADDR="${HTTP_ADDR:-:8080}"
+
+    prompt "Admin password [admin]: "
+    read -r ADMIN_PASS
+    ADMIN_PASS="${ADMIN_PASS:-admin}"
+
+    prompt "Database path [${DATA_DIR}/hijack.db]: "
+    read -r DB_PATH
+    DB_PATH="${DB_PATH:-${DATA_DIR}/hijack.db}"
+
+    prompt "Enable compression? [Y/n]: "
+    read -r COMP
+    COMP="${COMP:-Y}"
+    local compress_flag="-compress=true"
+    if [[ "$COMP" =~ ^[nN] ]]; then
+        compress_flag="-compress=false"
+    fi
+
+    mkdir -p "$(dirname "$DB_PATH")"
+
+    if [ "$DETECTED_OS" = "linux" ] && command -v systemctl &>/dev/null; then
+        step "Creating systemd service..."
+        cat > "${SERVICE_DIR}/ip-hijack-server.service" <<UNIT
+[Unit]
+Description=IP Hijack Management Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${INSTALL_DIR}/${SERVER_BIN} -tcp ${TCP_ADDR} -http ${HTTP_ADDR} -db ${DB_PATH} -admin-pass ${ADMIN_PASS} ${compress_flag}
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+        systemctl daemon-reload
+        systemctl enable ip-hijack-server
+        systemctl start ip-hijack-server
+        info "Service created and started"
+        echo ""
+        echo -e "  ${DIM}Web UI:${RESET}  http://<your-ip>${HTTP_ADDR}"
+        echo -e "  ${DIM}Agent TCP:${RESET}  ${TCP_ADDR}"
+        echo ""
+        echo -e "  ${DIM}Manage with:${RESET}"
+        echo -e "    systemctl status  ip-hijack-server"
+        echo -e "    systemctl restart ip-hijack-server"
+        echo -e "    journalctl -u ip-hijack-server -f"
+    else
+        echo ""
+        info "Run manually:"
+        echo -e "    ${SERVER_BIN} -tcp ${TCP_ADDR} -http ${HTTP_ADDR} -db ${DB_PATH} -admin-pass ${ADMIN_PASS} ${compress_flag}"
+    fi
+}
+
+# ─── Uninstall ────────────────────────────────────────────────────
+uninstall() {
+    step "Uninstalling IP Hijack Server..."
+
+    if [ "$DETECTED_OS" = "linux" ] && command -v systemctl &>/dev/null; then
+        if systemctl is-active ip-hijack-server &>/dev/null; then
+            systemctl stop ip-hijack-server
+            info "Stopped ip-hijack-server"
+        fi
+        if [ -f "${SERVICE_DIR}/ip-hijack-server.service" ]; then
+            systemctl disable ip-hijack-server 2>/dev/null || true
+            rm -f "${SERVICE_DIR}/ip-hijack-server.service"
+            info "Removed ip-hijack-server service"
+        fi
+        systemctl daemon-reload
+    fi
+
+    if [ -f "${INSTALL_DIR}/${SERVER_BIN}" ]; then
+        rm -f "${INSTALL_DIR}/${SERVER_BIN}"
+        info "Removed ${INSTALL_DIR}/${SERVER_BIN}"
+    fi
+
+    echo ""
+    prompt "Also remove data (database, UUID) in ${DATA_DIR}? [y/N]: "
+    read -r RM_DATA
+    if [[ "$RM_DATA" =~ ^[yY] ]]; then
+        rm -rf "$DATA_DIR"
+        info "Removed ${DATA_DIR}"
+    else
+        warn "Data preserved in ${DATA_DIR}"
+    fi
+
+    info "Uninstall complete"
+}
+
+# ─── Update ───────────────────────────────────────────────────────
+update() {
+    step "Updating Server..."
+
+    if [ ! -f "${INSTALL_DIR}/${SERVER_BIN}" ]; then
+        warn "Server is not installed. Run install first."
+        return
+    fi
+
+    download_bin "server-${PLATFORM}" "${BASE_URL}/server-${PLATFORM}" "${INSTALL_DIR}/${SERVER_BIN}"
+    if [ "$DETECTED_OS" = "linux" ] && systemctl is-active ip-hijack-server &>/dev/null; then
+        systemctl restart ip-hijack-server
+        info "Restarted ip-hijack-server"
+    fi
+}
+
+# ─── Status ───────────────────────────────────────────────────────
+show_status() {
+    step "Server Status"
+    echo ""
+
+    if [ -f "${INSTALL_DIR}/${SERVER_BIN}" ]; then
+        echo -e "  Server binary: ${GREEN}installed${RESET}  (${INSTALL_DIR}/${SERVER_BIN})"
+    else
+        echo -e "  Server binary: ${DIM}not installed${RESET}"
+    fi
+
+    if [ "$DETECTED_OS" = "linux" ] && command -v systemctl &>/dev/null; then
+        echo ""
+        if systemctl is-active ip-hijack-server &>/dev/null; then
+            echo -e "  ip-hijack-server: ${GREEN}running${RESET}"
+        elif [ -f "${SERVICE_DIR}/ip-hijack-server.service" ]; then
+            echo -e "  ip-hijack-server: ${YELLOW}stopped${RESET}"
+        else
+            echo -e "  ip-hijack-server: ${DIM}not configured${RESET}"
+        fi
+    fi
+
+    echo ""
+    echo -e "  Platform: ${BOLD}${PLATFORM}${RESET}"
+
+    if [ -f "${DATA_DIR}/hijack.db" ]; then
+        local db_size
+        db_size=$(du -h "${DATA_DIR}/hijack.db" | cut -f1)
+        echo -e "  Database: ${DATA_DIR}/hijack.db (${db_size})"
+    fi
+}
+
+# ─── Main Menu ────────────────────────────────────────────────────
+main_menu() {
+    print_banner
+    detect_arch
+    info "Detected platform: ${BOLD}${PLATFORM}${RESET}"
+    echo ""
+
+    echo -e "  ${BOLD}Select an option:${RESET}"
+    echo ""
+    echo -e "    ${CYAN}1)${RESET}  Install Server"
+    echo -e "    ${CYAN}2)${RESET}  Update Server"
+    echo -e "    ${CYAN}3)${RESET}  Uninstall Server"
+    echo -e "    ${CYAN}4)${RESET}  Show Status"
+    echo -e "    ${CYAN}0)${RESET}  Exit"
+    echo ""
+    prompt "Enter choice [1-4, 0]: "
+    read -r choice
+
+    case "$choice" in
+        1) check_root; install_server ;;
+        2) check_root; update ;;
+        3) check_root; uninstall ;;
+        4) show_status ;;
+        0) echo "  Bye."; exit 0 ;;
+        *) error "Invalid choice"; exit 1 ;;
+    esac
+
+    echo ""
+    info "Done!"
+    echo ""
+}
+
+case "${1:-}" in
+    install)    check_root; detect_arch; install_server ;;
+    update)     check_root; detect_arch; update ;;
+    uninstall)  check_root; detect_arch; uninstall ;;
+    status)     detect_arch; show_status ;;
+    *)          main_menu ;;
+esac
