@@ -137,11 +137,18 @@ UNIT
 
         systemctl daemon-reload
         systemctl enable ip-hijack-server
-        systemctl start ip-hijack-server
-        info "Service created and started"
-        echo ""
-        echo -e "  ${DIM}Web UI:${RESET}  http://<your-ip>${HTTP_ADDR}"
-        echo -e "  ${DIM}Agent TCP:${RESET}  ${TCP_ADDR}"
+        systemctl start ip-hijack-server || true
+        sleep 1
+        if systemctl is-active ip-hijack-server &>/dev/null; then
+            info "Service created and started"
+            echo ""
+            echo -e "  ${DIM}Web UI:${RESET}  http://<your-ip>${HTTP_ADDR}"
+            echo -e "  ${DIM}Agent TCP:${RESET}  ${TCP_ADDR}"
+        else
+            warn "Service created but failed to start. Recent logs:"
+            echo ""
+            journalctl -u ip-hijack-server --no-pager -n 10 2>/dev/null || systemctl status ip-hijack-server --no-pager 2>/dev/null || true
+        fi
         echo ""
         echo -e "  ${DIM}Manage with:${RESET}"
         echo -e "    systemctl status  ip-hijack-server"
