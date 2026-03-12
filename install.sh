@@ -16,8 +16,8 @@ DATA_DIR="/var/lib/ip-hijack"
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
 BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
 
-VERSION="1.0.1"
-BUILD="2026-03-12.9"
+VERSION="1.0.2"
+BUILD="2026-03-12.10"
 
 print_banner() {
     echo ""
