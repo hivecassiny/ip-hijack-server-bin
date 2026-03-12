@@ -17,7 +17,7 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
 BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
 
 VERSION="1.0.0"
-BUILD="2026-03-12.3"
+BUILD="2026-03-12.4"
 
 print_banner() {
     echo ""
@@ -247,6 +247,29 @@ show_status() {
     fi
 }
 
+# ─── Service Control ──────────────────────────────────────────────
+svc_start() {
+    if ! command -v systemctl &>/dev/null; then error "systemd not available"; exit 1; fi
+    if ! [ -f "${SERVICE_DIR}/ip-hijack-server.service" ]; then error "Service not installed"; exit 1; fi
+    systemctl start ip-hijack-server && info "ip-hijack-server started" || error "Failed to start"
+}
+
+svc_stop() {
+    if ! command -v systemctl &>/dev/null; then error "systemd not available"; exit 1; fi
+    systemctl stop ip-hijack-server && info "ip-hijack-server stopped" || error "Failed to stop"
+}
+
+svc_restart() {
+    if ! command -v systemctl &>/dev/null; then error "systemd not available"; exit 1; fi
+    if ! [ -f "${SERVICE_DIR}/ip-hijack-server.service" ]; then error "Service not installed"; exit 1; fi
+    systemctl restart ip-hijack-server && info "ip-hijack-server restarted" || error "Failed to restart"
+}
+
+svc_logs() {
+    if ! command -v journalctl &>/dev/null; then error "journalctl not available"; exit 1; fi
+    journalctl -u ip-hijack-server -f --no-pager -n 50
+}
+
 # ─── Main Menu ────────────────────────────────────────────────────
 main_menu() {
     print_banner
@@ -259,17 +282,27 @@ main_menu() {
     echo -e "    ${CYAN}1)${RESET}  Install Server"
     echo -e "    ${CYAN}2)${RESET}  Update Server"
     echo -e "    ${CYAN}3)${RESET}  Uninstall Server"
-    echo -e "    ${CYAN}4)${RESET}  Show Status"
+    echo -e "    ${DIM}────────────────────${RESET}"
+    echo -e "    ${CYAN}4)${RESET}  Start Server"
+    echo -e "    ${CYAN}5)${RESET}  Stop Server"
+    echo -e "    ${CYAN}6)${RESET}  Restart Server"
+    echo -e "    ${CYAN}7)${RESET}  View Logs"
+    echo -e "    ${DIM}────────────────────${RESET}"
+    echo -e "    ${CYAN}8)${RESET}  Show Status"
     echo -e "    ${CYAN}0)${RESET}  Exit"
     echo ""
-    prompt "Enter choice [1-4, 0]: "
+    prompt "Enter choice [0-8]: "
     read -r choice < /dev/tty
 
     case "$choice" in
         1) check_root; install_server ;;
         2) check_root; update ;;
         3) check_root; uninstall ;;
-        4) show_status ;;
+        4) check_root; svc_start ;;
+        5) check_root; svc_stop ;;
+        6) check_root; svc_restart ;;
+        7) svc_logs ;;
+        8) show_status ;;
         0) echo "  Bye."; exit 0 ;;
         *) error "Invalid choice"; exit 1 ;;
     esac
@@ -283,6 +316,10 @@ case "${1:-}" in
     install)    check_root; detect_arch; install_server ;;
     update)     check_root; detect_arch; update ;;
     uninstall)  check_root; detect_arch; uninstall ;;
+    start)      check_root; svc_start ;;
+    stop)       check_root; svc_stop ;;
+    restart)    check_root; svc_restart ;;
+    logs)       svc_logs ;;
     status)     detect_arch; show_status ;;
     *)          main_menu ;;
 esac
